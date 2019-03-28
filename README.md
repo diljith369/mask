@@ -2,6 +2,7 @@
 
 #####  Mask is a reverse shell over TCP using TLS and MaskManager is a manager for Mask .
 #####  Certificate pinning is implemented to escape from MITM
+#####  Capable of grabbing screenshot and downloading files from target.
 
 ## Getting Started
 

